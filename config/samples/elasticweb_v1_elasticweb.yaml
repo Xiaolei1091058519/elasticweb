@@ -1,0 +1,40 @@
+apiVersion: elasticweb.com.bolingcavalry/v1
+kind: ElasticWeb
+metadata:
+  labels:
+    app.kubernetes.io/name: elasticweb
+    app.kubernetes.io/managed-by: kustomize
+  name: elasticweb-sample
+  namespace: demo
+spec:
+  singlePodQPS: 500
+  totalQPS: 500
+  deploy: 
+  - name: tomcat
+    image: hub.autox.tech/library/tomcat:8.0.18-jre8
+    ports:
+    - name: http
+      port: 8080
+  - name: https
+    image: hub.autox.tech/library/tomcat:8.0.18-jre8
+    ports:
+    - name: https 
+      port: 8443
+  service:
+    type: ClusterIP
+    ports:
+    - name: http
+      port: 8080
+      targetport: 8080
+    - name: https 
+      port: 8443
+      targetport: 8443
+    
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+  labels:
+    name: demo
