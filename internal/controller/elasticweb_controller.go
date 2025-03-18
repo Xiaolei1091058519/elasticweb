@@ -51,6 +51,10 @@ const (
 	MEM_LIMIT = "512Mi"
 )
 
+var (
+	log = ctrl.Log.WithName("setup")
+)
+
 // ElasticWebReconciler reconciles a ElasticWeb object
 type ElasticWebReconciler struct {
 	client.Client
@@ -76,10 +80,6 @@ type ElasticWebReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.1/pkg/reconcile
 func (r *ElasticWebReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// _ = log.FromContext(ctx)
-
-	r.Log.Info("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-
-	log := r.Log.WithValues("elasticweb", req.NamespacedName)
 
 	// your logic here
 	log.Info("1. start reconcile logic")
@@ -148,7 +148,6 @@ func (r *ElasticWebReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// 如果查到了deployment，并且没有返回错误，就走下面的逻辑
-
 	// 根据单QPS和总QPS计算期望的副本数
 	expectReplicas := getExpectReplicas(instance)
 
@@ -156,29 +155,51 @@ func (r *ElasticWebReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	realReplicas := *deployment.Spec.Replicas
 
 	log.Info(fmt.Sprintf("9. expectReplicas [%d], realReplicas [%d]", expectReplicas, realReplicas))
+	// log.Info("如果expectReplicas和realReplicas相等，就直接返回了")
+	// // 如果expectReplicas和realReplicas相等，就直接返回了
+	// if expectReplicas == realReplicas {
+	// 	log.Info("10. return now")
+	// 	return ctrl.Result{}, nil
+	// }
+	if expectReplicas != realReplicas {
 
-	// 如果expectReplicas和realReplicas相等，就直接返回了
-	if expectReplicas == realReplicas {
-		log.Info("10. return now")
-		return ctrl.Result{}, nil
+		log.Info("-----------------11----------------------")
+		// 如果expectReplicas和realReplicas不相等，就需要调整。
+		*(deployment.Spec.Replicas) = expectReplicas
+		log.Info("11. update deployment`s Replicas")
+
+		// 通过客户端更新deployment
+		if err = r.Update(ctx, deployment); err != nil {
+			log.Error(err, "12. update deployment replicas error")
+			return ctrl.Result{}, err
+		}
+
+		log.Info("13. update status")
+
+		// 如果更新deployment的Replicas成功，就更新状态
+		if err = updateStatus(ctx, r, instance); err != nil {
+			log.Error(err, "14. update status error")
+			return ctrl.Result{}, err
+		}
+	}
+	// 当前deployment容器信息
+	containers := deployment.Spec.Template.Spec.Containers
+	needUpdate := false
+	for i1, v1 := range containers {
+		for _, v2 := range instance.Spec.Deploy {
+			if v1.Name == v2.Name && v1.Image != v2.Image {
+				deployment.Spec.Template.Spec.Containers[i1].Image = v2.Image
+				log.Info("15. set deployment image")
+				needUpdate = true
+			}
+		}
 	}
 
-	// 如果expectReplicas和realReplicas不相等，就需要调整。
-	*(deployment.Spec.Replicas) = expectReplicas
-	log.Info("11. update deployment`s Replicas")
-
-	// 通过客户端更新deployment
-	if err = r.Update(ctx, deployment); err != nil {
-		log.Error(err, "12. update deployment replicas error")
-		return ctrl.Result{}, err
-	}
-
-	log.Info("13. update status")
-
-	// 如果更新deployment的Replicas成功，就更新状态
-	if err = updateStatus(ctx, r, instance); err != nil {
-		log.Error(err, "14. update status error")
-		return ctrl.Result{}, err
+	if needUpdate {
+		if err = r.Update(ctx, deployment); err != nil {
+			log.Error(err, "15. update deployment replicas error")
+			return ctrl.Result{}, err
+		}
 	}
 
 	return ctrl.Result{}, nil
