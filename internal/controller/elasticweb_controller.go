@@ -23,6 +23,7 @@ import (
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
@@ -182,18 +183,8 @@ func (r *ElasticWebReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			return ctrl.Result{}, err
 		}
 	}
-	// 当前deployment容器信息
-	containers := deployment.Spec.Template.Spec.Containers
-	needUpdate := false
-	for i1, v1 := range containers {
-		for _, v2 := range instance.Spec.Deploy {
-			if v1.Name == v2.Name && v1.Image != v2.Image {
-				deployment.Spec.Template.Spec.Containers[i1].Image = v2.Image
-				log.Info("15. set deployment image")
-				needUpdate = true
-			}
-		}
-	}
+	var needUpdate bool
+	deployment, needUpdate = getDiffDeployment(ctx, instance, deployment)
 
 	if needUpdate {
 		if err = r.Update(ctx, deployment); err != nil {
@@ -232,7 +223,6 @@ func getExpectReplicas(elasticWeb *elasticwebv1.ElasticWeb) int32 {
 // 2.将service和CRD实例elasticWeb建立关联(controllerutil.SetControllerReference方法)，这样当elasticWeb被删除的时候，service会被自动删除而无需我们干预；
 // 3.创建service的时候用到了client-go工具，推荐您阅读《client-go实战系列》,工具越熟练，编码越尽兴；
 func createServiceIfNotExists(ctx context.Context, r *ElasticWebReconciler, elasticWeb *elasticwebv1.ElasticWeb, req ctrl.Request) error {
-	log := r.Log.WithValues("func", "createService")
 	service := &corev1.Service{}
 	err := r.Get(ctx, req.NamespacedName, service)
 
@@ -294,7 +284,6 @@ func createServiceIfNotExists(ctx context.Context, r *ElasticWebReconciler, elas
 
 // 新建deployment
 func createDeployment(ctx context.Context, r *ElasticWebReconciler, elasticWeb *elasticwebv1.ElasticWeb) error {
-	log := r.Log.WithValues("func", "createDeployment")
 
 	// 计算期望的POD数量
 	expectReplicas := getExpectReplicas(elasticWeb)
@@ -329,6 +318,10 @@ func createDeployment(ctx context.Context, r *ElasticWebReconciler, elasticWeb *
 					"memory": resource.MustParse(MEM_LIMIT),
 				},
 			},
+			// ReadinessProbe: &corev1.Probe{
+			// 	InitialDelaySeconds: 10,
+				
+			// },
 		}
 		containers = append(containers, tmp)
 	}
@@ -380,7 +373,6 @@ func createDeployment(ctx context.Context, r *ElasticWebReconciler, elasticWeb *
 
 // 完成pod的处理后，更新最新状态
 func updateStatus(ctx context.Context, r *ElasticWebReconciler, elasticWeb *elasticwebv1.ElasticWeb) error {
-	log := r.Log.WithValues("func", "updateStatus")
 
 	// 单个pod的QPS
 	singlePodQPS := *(elasticWeb.Spec.SinglePodQPS)
@@ -403,4 +395,20 @@ func updateStatus(ctx context.Context, r *ElasticWebReconciler, elasticWeb *elas
 	}
 
 	return nil
+}
+
+func getDiffDeployment(ctx context.Context, elasticWeb *elasticwebv1.ElasticWeb, oldDeployment *appsv1.Deployment) (newDeployment *appsv1.Deployment, needUpdate bool) {
+	// 当前deployment容器信息
+	containers := oldDeployment.Spec.Template.Spec.Containers
+	needUpdate = false
+	for i1, v1 := range containers {
+		for _, v2 := range elasticWeb.Spec.Deploy {
+			if v1.Name == v2.Name && v1.Image != v2.Image {
+				oldDeployment.Spec.Template.Spec.Containers[i1].Image = v2.Image
+				log.Info("15. set deployment image")
+				needUpdate = true
+			}
+		}
+	}
+	return oldDeployment, needUpdate
 }

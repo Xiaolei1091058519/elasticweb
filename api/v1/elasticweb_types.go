@@ -54,6 +54,11 @@ type ElasticWebSpecDeployPorts struct {
 	Port *int32 `json:"port"`
 }
 
+// type ElasticWebSpecDeployResources struct {
+// 	Requests []ElasticWebSpecDeployResourcesRequests
+// 	Limits
+// }
+
 type ElasticWebSpecSvc struct {
 	Type  string                   `json:"type"`
 	Ports []ElasticWebSpecSvcPorts `json:"ports"`

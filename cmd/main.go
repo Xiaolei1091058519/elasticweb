@@ -37,6 +37,7 @@ import (
 
 	elasticwebv1 "elasticweb/api/v1"
 	"elasticweb/internal/controller"
+	webhookelasticwebv1 "elasticweb/internal/webhook/v1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -148,6 +149,13 @@ func main() {
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ElasticWeb")
 		os.Exit(1)
+	}
+	// nolint:goconst
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err = webhookelasticwebv1.SetupElasticWebWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "ElasticWeb")
+			os.Exit(1)
+		}
 	}
 	// +kubebuilder:scaffold:builder
 
